@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+# Given a honggfuzz workspace directory, find the smallest
+# sample for each unique PC
+TK=$(cd "$(dirname $BASH_SOURCE)" && pwd)
+
+WORKSPACE="$1"
+[ ! -d "${WORKSPACE}" ] && echo "$0 <workspace_dir>" >/dev/stderr && exit 1
+
+PCS=( $("${TK}/hf_uniq_pc" "${WORKSPACE}") )
+
+for PC in "${PCS[@]}"; do
+  ls --sort=size "${WORKSPACE}"/SIG*.PC.${PC}.* | tail -n 1
+done

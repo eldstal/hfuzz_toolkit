@@ -1,0 +1,11 @@
+#!/bin/bash
+#
+# Given a honggfuzz workspace directory, list the unique
+# PCs for which crashes have been found
+
+
+WORKSPACE="$1"
+
+[ ! -d "${WORKSPACE}" ] && echo "$0 <workspace_dir>" >/dev/stderr && exit 1
+
+( cd "${WORKSPACE}" && ls SIG* | grep ".PC." | cut -d '.' -f 3 | sort | uniq )
