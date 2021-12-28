@@ -1,0 +1,58 @@
+#!/bin/bash
+#
+# Given a honggfuzz workspace directory or crash file, find the unique
+# source code locations of each crash
+# Will attempt to backtrack through the stack to avoid library functions
+# such as strlen().
+# Provide the command line like you do to hfuzz, with ___FILE___ where the
+# input filename should go.
+#
+# Warning: Only works with binaries built using hfuzz-clang or hfuzz-clang++
+# TODO: port over to a GDB script or something
+
+TK=$(cd "$(dirname $BASH_SOURCE)" && pwd)
+
+INDATA="$1"
+[ ! -d "${INDATA}" -a ! -f "${INDATA}" ] && echo "$0 <workspace_dir> <command> [args]" >/dev/stderr && exit 1
+
+shift
+
+EXE="$1"
+[ ! -x "${EXE}" ] && echo "$0 <workspace_dir> <command> [args]" >/dev/stderr && exit 1
+
+shift
+PARAM_TEMPLATE="${@}"
+
+
+if [ -f "${INDATA}" ]; then
+  # Single input file
+  INPUTS=( "${INDATA}" )
+else
+  INPUTS=( $("${TK}/hf_smallest_crash" "${INDATA}") )
+fi
+
+for INPUT in "${INPUTS[@]}"; do
+
+  # Substitute ___FILE___ for our input file
+  PARAMS=( "${PARAM_TEMPLATE[@]}" )
+  for POS in "${!PARAM_TEMPLATE[@]}"; do
+    PARAMS[$POS]=$(echo "${PARAM_TEMPLATE[$POS]}" | sed -re "s;___FILE___;${INPUT};g")
+  done
+
+  #echo "${PARAMS[@]}"
+
+  # Run the fuzzed command, ignore its output and catch the sanitizer stack trace
+  # Pass each address, in order, to add2line which will resolve via debug symbols
+  # If it fails (because the address isn't from within the binary), it spits out
+  # "??:?", and we can ignore those.
+  # The topmost resolvable address is the interesting one, the root of our crash.
+  ${EXE} "${PARAMS[@]}" 2>/dev/stdout 1>/dev/null \
+    | egrep -A200 '==[0-9]+==ERROR' \
+    | egrep -B200 '==[0-9]+==ABORTING' \
+    | egrep '^\s+#[0-9]+ 0x[0-9a-fA-F]+ ' \
+    | sed -re 's/^\s+#[0-9]+ (0x[0-9a-fA-F]+) .*/\1/' \
+    | xargs -L 1 addr2line --exe=${EXE} \
+    | grep -v '?' \
+    | head -n 1
+
+done
